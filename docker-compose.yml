@@ -1,0 +1,31 @@
+# docker compose up -d --build
+# Put your secrets in a local .env file (copy .env.example) — it is read by
+# compose and is never baked into the image.
+services:
+  queen-akuma-v4:
+    build: .
+    image: queen-akuma-v4:v4
+    container_name: queen-akuma-v4
+    restart: unless-stopped
+    env_file:
+      - .env
+    environment:
+      PORT: "3000"
+    ports:
+      - "3000:3000"
+    volumes:
+      - queen-akuma-session:/app/session
+      - queen-akuma-data:/app/data
+    init: true               # signal forwarding even without tini
+    stop_grace_period: 15s   # time for the bot to save state on SIGTERM
+    healthcheck:
+      test: ["CMD-SHELL", "curl -fsS http://127.0.0.1:3000/health || exit 1"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 45s
+    security_opt:
+      - no-new-privileges:true
+volumes:
+  queen-akuma-session:
+  queen-akuma-data:

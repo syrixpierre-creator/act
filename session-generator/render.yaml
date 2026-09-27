@@ -1,0 +1,9 @@
+services:
+  - type: web
+    name: queen-akuma-v4-session-generator
+    env: node
+    plan: free
+    buildCommand: npm install
+    startCommand: node session-generator/index.js
+    # No PORT env needed — Render injects PORT automatically and
+    # session-generator/index.js binds to process.env.PORT first.

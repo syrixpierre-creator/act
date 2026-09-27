@@ -1,0 +1,148 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<title>QUEEN AKUMA V4 — Pair a session</title>
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<meta name="theme-color" content="#0b0b12" />
+<style>
+  :root {
+    --bg: #0b0b12; --panel: #151522; --edge: rgba(255,255,255,.08);
+    --text: #eee; --dim: #9a9aab; --accent: #d946ef; --ok: #3ddc84; --err: #e6553a;
+  }
+  * { box-sizing: border-box; }
+  body {
+    margin: 0; min-height: 100vh; display: flex; align-items: center; justify-content: center;
+    background: var(--bg); color: var(--text); font-family: -apple-system, Segoe UI, Roboto, sans-serif;
+    padding: 1.5rem;
+  }
+  .card {
+    width: 100%; max-width: 420px; background: var(--panel); border: 1px solid var(--edge);
+    border-radius: 16px; padding: 2rem; box-shadow: 0 0 30px rgba(0,0,0,.4);
+  }
+  h1 { font-size: 1.1rem; text-align: center; letter-spacing: .05em; margin: 0 0 .3rem; }
+  .sub { text-align: center; color: var(--dim); font-size: .85rem; margin: 0 0 1.5rem; }
+  label { display: block; font-size: .8rem; color: var(--dim); margin-bottom: .4rem; }
+  input {
+    width: 100%; padding: .75rem .9rem; border-radius: 10px; border: 1px solid var(--edge);
+    background: #0e0e18; color: var(--text); font-size: 1rem; outline: none;
+  }
+  input:focus { border-color: var(--accent); }
+  button {
+    width: 100%; margin-top: 1rem; padding: .8rem; border: none; border-radius: 10px;
+    background: var(--accent); color: #fff; font-weight: 700; font-size: .95rem; cursor: pointer;
+  }
+  button:disabled { opacity: .5; cursor: default; }
+  .err { color: var(--err); font-size: .8rem; margin-top: .5rem; min-height: 1em; }
+  .result { text-align: center; margin-top: 1.2rem; display: none; }
+  .code {
+    font-family: 'Courier New', monospace; font-size: 1.6rem; letter-spacing: .08em;
+    background: #0e0e18; border: 1px dashed var(--accent); border-radius: 10px; padding: .8rem;
+    margin: .8rem 0; word-break: break-all;
+  }
+  .status { font-size: .85rem; color: var(--dim); }
+  .status .dot { display: inline-block; width: 8px; height: 8px; border-radius: 50%; background: var(--err); margin-right: 6px; }
+  .status.on .dot { background: var(--ok); }
+  .stats { text-align: center; margin-top: 1.5rem; font-size: .75rem; color: var(--dim); }
+  a { color: #8ab4f8; }
+</style>
+</head>
+<body>
+  <div class="card">
+    <h1>⚡ ───  ❁ ǫᴜᴇᴇɴ ᴀᴋᴜᴍᴀ ᴠ4 ❁ ───</h1>
+    <p class="sub">Pair a WhatsApp number with a code — no SESSION_ID needed</p>
+
+    <form id="pair-form">
+      <label for="phone">Phone number (country code, digits only)</label>
+      <input id="phone" type="tel" inputmode="numeric" placeholder="e.g. 2250700000000" autocomplete="off" required />
+      <button id="btn" type="submit">Get pairing code</button>
+      <p class="err" id="err"></p>
+    </form>
+
+    <div class="result" id="result">
+      <p class="sub">Open WhatsApp → Linked devices → Link with phone number, then enter:</p>
+      <div class="code" id="code">— — — —</div>
+      <p class="status" id="status"><span class="dot"></span><span id="status-text">Waiting for pairing…</span></p>
+    </div>
+
+    <p class="stats" id="stats">&nbsp;</p>
+    <p class="sub" style="margin-top:1rem"><a href="/health">/health</a> — JSON status endpoint</p>
+  </div>
+
+<script>
+const form = document.getElementById('pair-form');
+const btn = document.getElementById('btn');
+const errEl = document.getElementById('err');
+const resultEl = document.getElementById('result');
+const codeEl = document.getElementById('code');
+const statusEl = document.getElementById('status');
+const statusTextEl = document.getElementById('status-text');
+const statsEl = document.getElementById('stats');
+
+let pollTimer = null;
+let currentId = null;
+
+async function loadStats() {
+  try {
+    const r = await fetch('/api/stats');
+    const d = await r.json();
+    statsEl.textContent = `${d.active} connected · ${d.total} total session(s)`;
+  } catch {}
+}
+loadStats();
+setInterval(loadStats, 15000);
+
+function pollStatus(id) {
+  clearInterval(pollTimer);
+  pollTimer = setInterval(async () => {
+    try {
+      const r = await fetch('/api/status/' + encodeURIComponent(id));
+      const d = await r.json();
+      if (d.status === 'connected') {
+        statusEl.classList.add('on');
+        statusTextEl.textContent = `Connected ✅ (${d.pluginCount || 0} plugins loaded)`;
+        clearInterval(pollTimer);
+        loadStats();
+      } else if (d.status === 'disconnected' || d.status === 'none') {
+        statusTextEl.textContent = 'Disconnected — refresh and try again.';
+        clearInterval(pollTimer);
+      }
+    } catch {}
+  }, 3000);
+}
+
+form.addEventListener('submit', async (e) => {
+  e.preventDefault();
+  errEl.textContent = '';
+  const phone = document.getElementById('phone').value.trim();
+  btn.disabled = true;
+  btn.textContent = 'Requesting…';
+  try {
+    const r = await fetch('/api/pair', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ phone })
+    });
+    const d = await r.json();
+    if (!r.ok || !d.ok) throw new Error(d.error || 'Could not get a pairing code.');
+    resultEl.style.display = 'block';
+    currentId = d.sessionId;
+    if (d.alreadyLinked) {
+      codeEl.textContent = '— already linked —';
+      statusEl.classList.add('on');
+      statusTextEl.textContent = 'Connected ✅';
+    } else {
+      codeEl.textContent = d.pairingCode;
+      statusTextEl.textContent = 'Waiting for pairing…';
+      pollStatus(currentId);
+    }
+  } catch (err) {
+    errEl.textContent = err.message;
+  } finally {
+    btn.disabled = false;
+    btn.textContent = 'Get pairing code';
+  }
+});
+</script>
+</body>
+</html>
